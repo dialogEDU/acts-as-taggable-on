@@ -27,11 +27,13 @@ module ActsAsTaggableOn::Taggable
       end
     end
 
-    def owner_tags_on(owner, context)
+    def owner_tags_on(owner, context, account)
       if owner.nil?
-        scope = base_tags.where([%(#{ActsAsTaggableOn::Tagging.table_name}.context = ?), context.to_s])
+        scope = base_tags.where(account_id: account.id)
+                         .where([%(#{ActsAsTaggableOn::Tagging.table_name}.context = ?), context.to_s])
       else
-        scope = base_tags.where([%(#{ActsAsTaggableOn::Tagging.table_name}.context = ? AND
+        scope = base_tags.where(account_id: account.id)
+                         .where([%(#{ActsAsTaggableOn::Tagging.table_name}.context = ? AND
                                     #{ActsAsTaggableOn::Tagging.table_name}.tagger_id = ? AND
                                     #{ActsAsTaggableOn::Tagging.table_name}.tagger_type = ?), context.to_s, owner.id, owner.class.base_class.to_s])
       end
@@ -79,7 +81,7 @@ module ActsAsTaggableOn::Taggable
         cached_owned_tag_list_on(context).each do |owner, tag_list|
 
           # Find existing tags or create non-existing tags:
-          tags = find_or_create_tags_from_list_with_context(tag_list.uniq, context)
+          tags = find_or_create_tags_from_list_with_context(account, tag_list.uniq, context)
 
           # Tag objects for owned tags
           owned_tags = owner_tags_on(owner, context).to_a

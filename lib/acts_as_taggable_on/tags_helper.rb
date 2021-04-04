@@ -11,5 +11,15 @@ module ActsAsTaggableOn
         yield tag, classes[index.nan? ? 0 : index.round]
       end
     end
+
+    def tag_search
+      tag_partial_name = params[:search]+'%'
+      @tags = ActsAsTaggableOn::Tag.where(["name LIKE ? and account = ?" , tag_partial_name, @account.id])
+      output = []
+      @tags.each do |t|
+        output << [t.name,t.name,nil,t.name]
+      end
+      render layout: false, json: output
+    end
   end
 end
