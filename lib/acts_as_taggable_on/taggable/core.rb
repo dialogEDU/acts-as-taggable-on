@@ -152,7 +152,7 @@ module ActsAsTaggableOn::Taggable
       elsif cached_tag_list_on(context) && ensure_included_cache_methods! && self.class.caching_tag_list_on?(context)
         instance_variable_set(variable_name, ActsAsTaggableOn.default_parser.new(cached_tag_list_on(context)).parse)
       else
-        instance_variable_set(variable_name, ActsAsTaggableOn::TagList.new(tags_on(context).map(&:name)))
+        instance_variable_set(variable_name, ActsAsTaggableOn::TagList.new(tags_on(context, @account).map(&:name)))
       end
     end
 
@@ -165,12 +165,12 @@ module ActsAsTaggableOn::Taggable
       variable_name = "@all_#{context.to_s.singularize}_list"
       return instance_variable_get(variable_name) if instance_variable_defined?(variable_name) && instance_variable_get(variable_name)
 
-      instance_variable_set(variable_name, ActsAsTaggableOn::TagList.new(all_tags_on(context).map(&:name)).freeze)
+      instance_variable_set(variable_name, ActsAsTaggableOn::TagList.new(all_tags_on(context, account).map(&:name)).freeze)
     end
 
     ##
     # Returns all tags of a given context
-    def all_tags_on(context)
+    def all_tags_on(context, account)
       tagging_table_name = ActsAsTaggableOn::Tagging.table_name
 
       opts = ["#{tagging_table_name}.context = ?", context.to_s]
@@ -186,7 +186,7 @@ module ActsAsTaggableOn::Taggable
 
     ##
     # Returns all tags that are not owned of a given context
-    def tags_on(context)
+    def tags_on(context, account)
       scope = base_tags.where(["#{ActsAsTaggableOn::Tagging.table_name}.context = ? AND #{ActsAsTaggableOn::Tagging.table_name}.tagger_id IS NULL", context.to_s])
       # when preserving tag order, return tags in created order
       # if we added the order to the association this would always apply
@@ -219,8 +219,8 @@ module ActsAsTaggableOn::Taggable
 
     ##
     # Find existing tags or create non-existing tags
-    def load_tags(tag_list)
-      ActsAsTaggableOn::Tag.find_or_create_all_with_like_by_name(tag_list)
+    def load_tags(account, tag_list)
+      ActsAsTaggableOn::Tag.find_or_create_all_with_like_by_name(account, tag_list)
     end
 
     def save_tags
@@ -230,10 +230,10 @@ module ActsAsTaggableOn::Taggable
         tag_list = tag_list_cache_on(context).uniq
 
         # Find existing tags or create non-existing tags:
-        tags = find_or_create_tags_from_list_with_context(tag_list, context)
+        tags = find_or_create_tags_from_list_with_context(account, tag_list, context)
 
         # Tag objects for currently assigned tags
-        current_tags = tags_on(context)
+        current_tags = tags_on(context, account)
 
         # Tag maintenance based on whether preserving the created order of tags
         if self.class.preserve_tag_order?
@@ -310,8 +310,8 @@ module ActsAsTaggableOn::Taggable
     #
     # @param [Array<String>] tag_list Tags to find or create
     # @param [Symbol] context The tag context for the tag_list
-    def find_or_create_tags_from_list_with_context(tag_list, _context)
-      load_tags(tag_list)
+    def find_or_create_tags_from_list_with_context(account, tag_list, _context)
+      load_tags(account, tag_list)
     end
   end
 end

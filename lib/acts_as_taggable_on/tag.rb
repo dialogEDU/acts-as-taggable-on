@@ -5,11 +5,13 @@ module ActsAsTaggableOn
     ### ASSOCIATIONS:
 
     has_many :taggings, dependent: :destroy, class_name: '::ActsAsTaggableOn::Tagging'
+    belongs_to :account, class_name: 'Account', foreign_key: 'account_id'
+    belongs_to :site, class_name: 'Site', foreign_key: 'site_id'
 
     ### VALIDATIONS:
 
     validates_presence_of :name
-    validates_uniqueness_of :name, if: :validates_name_uniqueness?
+    validates_uniqueness_of :name, scope: 'account_id', if: :validates_name_uniqueness?
     validates_length_of :name, maximum: 255
 
     # monkey patch this method if don't need name uniqueness validation
@@ -21,31 +23,31 @@ module ActsAsTaggableOn
     scope :most_used, ->(limit = 20) { order('taggings_count desc').limit(limit) }
     scope :least_used, ->(limit = 20) { order('taggings_count asc').limit(limit) }
 
-    def self.named(name)
+    def self.named(name, account)
       if ActsAsTaggableOn.strict_case_match
-        where(["name = #{binary}?", as_8bit_ascii(name)])
+        where(["name = #{binary}? AND account_id = ?", as_8bit_ascii(name), account.id])
       else
-        where(['LOWER(name) = LOWER(?)', as_8bit_ascii(unicode_downcase(name))])
+        where(['LOWER(name) = LOWER(?) AND account_id = ?', as_8bit_ascii(unicode_downcase(name)), account.id])
       end
     end
 
-    def self.named_any(list)
+    def self.named_any(list, account)
       clause = list.map { |tag|
         sanitize_sql_for_named_any(tag).force_encoding('BINARY')
       }.join(' OR ')
-      where(clause)
+      where(account_id: account.id).where(clause)
     end
 
-    def self.named_like(name)
+    def self.named_like(name, account)
       clause = ["name #{ActsAsTaggableOn::Utils.like_operator} ? ESCAPE '!'", "%#{ActsAsTaggableOn::Utils.escape_like(name)}%"]
-      where(clause)
+      where(account_id: account.id).where(clause)
     end
 
-    def self.named_like_any(list)
+    def self.named_like_any(list, account)
       clause = list.map { |tag|
         sanitize_sql(["name #{ActsAsTaggableOn::Utils.like_operator} ? ESCAPE '!'", "%#{ActsAsTaggableOn::Utils.escape_like(tag.to_s)}%"])
       }.join(' OR ')
-      where(clause)
+      where(account_id: account.id).where(clause)
     end
 
     def self.for_context(context)
@@ -56,15 +58,15 @@ module ActsAsTaggableOn
 
     ### CLASS METHODS:
 
-    def self.find_or_create_with_like_by_name(name)
+    def self.find_or_create_with_like_by_name(name, account)
       if ActsAsTaggableOn.strict_case_match
         self.find_or_create_all_with_like_by_name([name]).first
       else
-        named_like(name).first || create(name: name)
+        named_like(name, account).first || create(name: name, account: account)
       end
     end
 
-    def self.find_or_create_all_with_like_by_name(*list)
+    def self.find_or_create_all_with_like_by_name(account, *list)
       list = Array(list).flatten
 
       return [] if list.empty?
@@ -73,11 +75,13 @@ module ActsAsTaggableOn
         begin
           tries ||= 3
 
-          existing_tags = named_any(list)
+          existing_tags = named_any(list, account)
           comparable_tag_name = comparable_name(tag_name)
           existing_tag = existing_tags.find { |tag| comparable_name(tag.name) == comparable_tag_name }
-          existing_tag || create(name: tag_name)
+          existing_tag || create(name: tag_name, account: account)
         rescue ActiveRecord::RecordNotUnique
+          APM::Error.call(e, self)
+
           if (tries -= 1).positive?
             ActiveRecord::Base.connection.execute 'ROLLBACK'
             retry
